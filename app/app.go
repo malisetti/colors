@@ -62,7 +62,7 @@ type App struct {
 // ProminentColorsFinderHandler exposes prominent colors functionality as an API
 func (a *App) ProminentColorsFinderHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
-	var response *HandleImgResponseBody
+	response := new(HandleImgResponseBody)
 	// handle response forming here
 	defer func() {
 		responseBytes, err := json.Marshal(response)
@@ -108,7 +108,7 @@ func (a *App) ProminentColorsFinderHandler(w http.ResponseWriter, r *http.Reques
 	var inCache bool
 
 	defer func() {
-		if inCache {
+		if a.Cache == nil || inCache {
 			return
 		}
 		uid, err := handleImgRequestBody.Hash(nil)
@@ -119,18 +119,20 @@ func (a *App) ProminentColorsFinderHandler(w http.ResponseWriter, r *http.Reques
 		}
 	}()
 
-	h, err := handleImgRequestBody.Hash(nil)
-	if err == nil {
-		var cachedProminentColors []prominentcolor.ColorItem
-		cachedData, inCache := a.Cache.Get(strconv.Itoa(int(h)))
-		cachedProminentColors, ok := cachedData.([]prominentcolor.ColorItem)
-		if inCache && ok && len(cachedProminentColors) > 0 {
-			response.ProminentColors = img.TopColors(cachedProminentColors)
-			return
+	if a.Cache != nil {
+		h, err := handleImgRequestBody.Hash(nil)
+		if err == nil {
+			var cachedProminentColors []prominentcolor.ColorItem
+			cachedData, inCache := a.Cache.Get(strconv.Itoa(int(h)))
+			cachedProminentColors, ok := cachedData.([]prominentcolor.ColorItem)
+			if inCache && ok && len(cachedProminentColors) > 0 {
+				response.ProminentColors = img.TopColors(cachedProminentColors)
+				return
+			}
 		}
 	}
 
-	response = handleImgRequestBody.FindProminentColors(a.MaxBodySizeInBytes, a.DiskCacheDir)
+	handleImgRequestBody.FindProminentColors(a.MaxBodySizeInBytes, a.DiskCacheDir, response)
 	return
 }
 
@@ -147,7 +149,7 @@ func (h *HandleImgRequestBody) Hash(opts *hashstructure.HashOptions) (uint64, er
 }
 
 // FindProminentColors converts request type to response type
-func (h *HandleImgRequestBody) FindProminentColors(maxRequestBodySize int64, cacheDir string) *HandleImgResponseBody {
+func (h *HandleImgRequestBody) FindProminentColors(maxRequestBodySize int64, cacheDir string, response *HandleImgResponseBody) *HandleImgResponseBody {
 	var err error
 	var errTyp ErrorType
 	var colors []string
@@ -197,12 +199,12 @@ func (h *HandleImgRequestBody) FindProminentColors(maxRequestBodySize int64, cac
 		return img.TopColors(prominentColors), ErrNone, nil
 	}()
 
-	response := new(HandleImgResponseBody)
 	if err != nil {
 		response.Error = CreateAppError(err, errTyp)
 	} else {
 		response.ProminentColors = colors
 	}
+
 	return response
 }
 
